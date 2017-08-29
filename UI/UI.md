@@ -137,18 +137,50 @@ self.navigationItem.leftBarButtonItem = self.editButtonItem()
 09  添加数据
 --------
 
+我们来实现新增数据的功能。在新增餐馆的控制器中初始化一个类：
+
+接着创建关联，按住control键选择done按钮拖拽到控制器代码中：
 
 
+同理把文本框也拖过去。回到控制器中有一个方法已经为我们准备好了
+override func prepareForSegue(segue: UIStoryboardSegue, sender: AnyObject?) {  
+       // Get the new view controller using segue.destinationViewController.  
+       // Pass the selected object to the new view controller.  
+         
+       if sender as NSObject == doneButton {  
+           if(!textField.text.isEmpty){  
+           restaurant.name = textField.text  
+           }  
+       }  
+   }  
 
+判断是不是点击了完成按钮，如果是，把文本框中的内容保存到实例中。回想我们之前在另一个场景设置的反向过渡还没有使用，现在在其中增加代码如下：
 
+@IBAction func unwindToList(segue:UIStoryboardSegue){  
+   let source = segue.sourceViewController as AddRestaurantViewController  
+      let r1 = source.restaurant  
+       if r1.name != "" {  
+       restaurantList.append(r1)  
+       }  
+   }  
 
+ 
+10 视图共性
+------
+视图的内容：
+1.视图的实现：视图的基类是UIView
+2.视图的Mode：尺寸填充模式，就是当尺寸超过了我们设定的值的时候采取什么适合屏幕的填充方式。
+3.Tag：标记序号
+       
+视图的行为：
+   主要有互动和绘图，互动是指用户的一些操作，可以通过勾选选择是否采用互动和多点触控。
+   
+绘图包括：透明度、可见、清除图像内容、截断子视图边界、子视图自动尺寸。
 
+试图外观：Alpha是透明度，取值是从0到1的：
 
-
-
-
-    
-    
+修改视图外观的代理方法：修改所有使用appearance方法，如果需要修改某个固定的用appearanceWhenContaindeIn方法。
+视图的色彩和图片：色彩是tintColor属性，也可以使用UIImage图片。       
     
     
     
