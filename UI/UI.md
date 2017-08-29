@@ -20,6 +20,7 @@ IBAction 中的一些事件类型。
     
     
 02 本地化及自动布局
+----------
 点开Supporting Files中的Info.plist。
 右侧第一栏选中China，这样如果遇到一些系统组件，那么会自动变成中文的。
 
@@ -33,9 +34,21 @@ IBAction 中的一些事件类型。
 大家可以按键盘上的command键+左右方向键旋转屏幕来试试。那么自动约束就实现了。    
     
     
+03 second scene 
+------------
+直接拖拽Table View Controller到storyboard中，会多出一个屏幕来
+
+现在我们是有两个场景的，下面的View Controller是我们创建工程就有的，而上面的是我们刚才新建出的Table View Controller。
+
+is Initial View Controller
+
+另外，直接拖动箭头也是可以的。
+
+现在我们在这个列表中添加一些数据。选中table view我们来看下属性编辑器的第一行，表格中的数据有两种类型，动态和静态.
+
+静态只显示，而动态可以直接在表格中添加，如图，我们先选择静态，让表格有一些数据可以看。选择静态之后，会出现三行，然后点击层次中的tableviewcell，右侧style选择basic，三行都如此，会出现三个title，我们选择默认的title，可以编辑。之后按住键盘上的option键可以复制。    
     
-    
-    
+04     
     
     
     
