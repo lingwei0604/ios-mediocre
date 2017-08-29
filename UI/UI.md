@@ -64,11 +64,78 @@ is Initial View Controller
 就变成了必须有输入才能返回的模式了，可以看到转场的时候场景是从屏幕的下方滑上来的。
 
 
-05 
+05 定制视图控制器
+-------------
+我们之前一直在storyboard上做操作，现在来些一些代码。
+在工程目录中右键选择new fie，在iOS的Source中选择Cocoa Touch Class
+
+点击Next,可以看到xcode给我们创建了一个继承了UIViewController的类：
+
+选中新增餐馆的viewcontroller，然后在右边选中类编辑器，custom class中选择我们自己的类，选中后现在变成我们自己的类来接管了。
+
+
+现在同样自定义餐馆排行这个场景的控制器，不同的是这个控制器类型是UITableViewController。
+
+06 反向过渡
+-----------
+
+我们第二个场景设置过渡的时候选择的是modal类型，不是push。所以用户输入后需要手工返回。导航条上有两个按钮，完成和取消。所以我们要对这两个按钮进行反向过渡，我们需要在事件源头添加@IBAction。
+
+@IBAction func unwindToList(segue:UIStoryboardSegue){  
+    
+  }  
+
+以上代码应该添加到RestaurantListViewController中，unwindToList代表反向过渡。然后回到storyboard中，选择新增餐馆的页面，按住control拖动两个按钮到顶部的EXIT中，会弹出我们刚才定义的那个方法，选中。
+
+运行一下看看是不是可以返回了。现在表格的内容没有了，我们选中表格，把静态内容改成动态
+
+
+07 数据添加
+----------
+我们使用了自己定义的控制器之后发现tableview上的餐馆没有了，这一话我们来添加数据，新添加一个餐馆类，这个类我们不需要继承系统的类，直接添加一个Swift文件就好
+
+但是现在我们运行会发现表格中依然空空如也，这是为什么呢？原来是我们并没有使用委托，我们需要把更新的表格内容委托给控制器。由于我们是子代理，所以需要重载控制器的很多方法
+
+
+打开storyboard，选择某一table view cell然后设定Identifier，命名为PCell。底下的Selection是选中样式，有以下几种：
+
+None，Blue，Gray，Default。
+
+这个方法的作用是重用我们刚才设置的默认格式。现在我们对cell格式和内容的操作都在上面这个方法中进行就好了。增加一行：
+
+08 展示数据
+-------
+
+现在我想要点击表单中的条目，进行标记，再次点击以取消，那么该如何做呢？依然使用的是tableView的重载方法，在
+Restaurant中新增一个isCollected的值表示是否收藏，然后回到RestaurantListViewController中，新增：
+
+但是运行的时候是没有反应的，虽然状态已经改了，但是没有体现到页面上，现在应该在页面上增加一个标记，更改后的控制cell的tableView方法如下
+
+再点一下就取消了，除了勾之外还有很多有趣的标识，大家可以试试。
+导航上还有编辑按钮，现在我们来实现编辑功能。现在点击左边的编辑按钮是没反应的，我们需要在viewDidLoad中增加下面的语句：
+
+self.navigationItem.leftBarButtonItem = self.editButtonItem()  
+要让系统知道导航坐标的按钮是我们的编辑按钮，然后在控制器中加入一个新的方法setEditing，这个也是自动补全的，代码如下：
+
+    override func setEditing(editing: Bool, animated: Bool) {  
+        super.setEditing(editing, animated: true)//先实现父类的  
+        tableView.setEditing(editing, animated: true)  
+    }  
+
+点击完成会返回。点击左边的红色图标右侧会滑出删除按钮，点击按钮会删除当前行，只需要在控制器中新增一个方法就好，代码如下：
+
+     override func tableView(tableView: UITableView, commitEditingStyle editingStyle: UITableViewCellEditingStyle, forRowAtIndexPath indexPath: NSIndexPath) {  
+    if editingStyle == UITableViewCellEditingStyle.Delete{//如果是删除按钮  
+    restaurantList.removeAtIndex(indexPath.row)//先删除数组中的元素  
+        tableView.deleteRowsAtIndexPaths([indexPath], withRowAnimation: UITableViewRowAnimation.Top)//删除列表行，其他行向上推  
+          
+    }  
+}  
 
 
 
-
+09  添加数据
+--------
 
 
 
