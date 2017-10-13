@@ -1,0 +1,436 @@
+
+
+Hybrid App就是由Native App提供容器（UIWebView / WKWebView），
+承载Web（H5）页面。Native与H5之间通过JS调Native接口或Native调
+JS方法进行通信，完成一系列交互。
+
+
+
+由于 开发移动端 Web 页面 使用 调试工具 比较复杂，
+简单粗暴 的 alert 函数 来解决问题， 因此开发环境
+启动 alert 支持 还是有必要的。 然而 webview 只是
+一个 载体， 真正 渲染 需要依赖 WebChromeClient 类
+来完成。 因此我们还需要给WebView设置一个
+WebChromeClient实例 
+
+
+关于 Native 端（以 Android 为例）
+
+我们提供容器的目的，是需要与H5页面进行交互（调用JS方法/提供方法给JS调用），
+因此我们还需要给WebView提供一个实例，用于向H5暴露调用Native方法的接口。
+
+wv.addJavascriptInterface(new DemoJavaScriptInterface(), "DIY");
+
+这句话将在WebView的Window对象中产生一个DIY实例对象，该对象包含了
+DemoJavaScriptInterface类中的接口方法，H5页面可以通过该对象与Native通信。
+
+
+window.DIY.openCamera()  // Native 端实现 打开相机功能。
+
+
+关于 Web 端
+
+web 端界面 + 框架 + 通信方法
+
+用原生JS实现与Native通信的方法
+
+
+WebView已经在Window对象下面创建了DIY对象，
+因此我们JS也就将就使用该对象作为命名空间
+
+对于一个Hybrid App项目可能会涉及到很多需要Native端完成的功能，
+但是如果Native将所有的业务方法都直接暴露到DIY对象下，势必会难以维护，
+而且会带来一些其他的麻烦。因此，我们约定统一的入口，
+并以参数的形式告知Native端H5现在需要做什么，而在DIY下只保留极少的入口方法。
+
+
+DIY
+{
+	startSdkWork: functioin(param){
+		//Native code 
+	}
+	httpRequest: function(param){
+		// Native code
+	}
+}
+
+
+DIY.bridge = {
+	// Web 端 调用 Native 方法的统一入口
+	callSdk: function(entry, param){}
+
+	//Native 端处理完业务 后回调 JS 方法入口
+	sdkCallback: function(sdkResponse){}
+
+	//Native 主动 调用 JS 方法入口
+	callJs: function(param){}
+
+	//判断 Native 是否提供了某接口
+	hasMethod:function(methodName){}
+}
+
+简单说明，callSdk与sdkCallback可以当做是关联的，callSdk用于启动Native端的处理逻辑，
+当Native处理完成后通过调用sdkCallback方法回传处理结果，进而有JS继续完成后续逻辑。
+而callJs与sdkCallback类似，都是供Native调用，不同在于callJs由Native端主动触发。
+hasMethod方法用于Web端在调用Native方法前判断Native端是否在DIY对象中暴露了某方法，
+避免随意调用导致逻辑报错。
+
+
+由于iOS与Android以及UIWebView和WKWebView与Web端通信存在差异：
+
+主要两点：
+
+1: WKWebView中不能直接通过parsedMethod(param)的方式调用，只能window.webkit.messageHandlers[entry].postMessage(param)来调用
+2: Android中WebView对上下文有要求，不能直接parsedMethod(param)调用，需要parsedMethod.call(that, param)的方式调用
+
+
+执行过程就是，Web端调用Native端功能的时候将回调方法名称通过callback传入Native，
+当Native处理完成后调用sdkCallback将回调方法回传，Web端通过回调方法名称确定后续
+的处理逻辑。如此一来功能由Web端发起，也由Web端处理结束，实现功能闭环。
+
+
+
+考虑的问题：
+
+分清Native与前端的界限，Native提供宿主环境，前端需要合理的利用Native提供的资源，提升用户体验及自身性能。在设计上需要考虑以下问题：
+
+交互设计:如何设计与前端的交互？Native需要考虑提供NativeUI/Header/消息/Alert等组件接口、通讯录/系统/设备信息读取接口、Native/H5相互跳转(
+H5跳Native、H5新开WebView跳转、Native跳转H5)等问题。
+
+数据访问:Native如何访问H5资源（File方式访问H5本地静态资源/URL方式访问服务器资源）。资源增量替换是Android的，iOS不用考虑。
+
+登录(及支付/分享等)模块:这些模块具体由谁实现？Native/Web一方操作怎样使另一方收到对应信息并处理？(支付/分享建议Native端来做，都有相应的SDK)
+
+开发调试:Native与前端需要商量出一套可开发调试的模型，不然很多业务开发的工作将难以继续。
+
+
+Hybrid 交互设计
+
+UIWebView由于其API难用、还有内存泄漏，现在已经弃用，iOS8以上都应该尽量用新的WKWebview。
+WK提供了一系列API来使得Native与Web的信息交换简单高效。还有一个不可忽视的一点是WK使用与
+Safari相同的JS引擎+内置手势+无内存泄漏，是UIWebView的替代者。
+
+所以在这里UIWebView只做简要介绍。
+
+
+UIWebView 
+
+Native 调 JS 方法
+webview.stringByEvaluatingJavaScriptFromString()
+
+js 调 Native 方法
+
+UIWebView没有办法直接使用js调用app，但是可以通过拦截request的方式间接实现JS调用Native方法,
+另一种是使用JavaScriptCore的jsContext注册objc对象或使用JSExport协议导出Native对象的方式。
+
+本文介绍第一类
+
+
+func webView(webView: UIWebView, shouldStartLoadWithRequest request: NSURLRequest, navigationType: UIWebViewNavigationType) -> Bool{
+          
+          //如果请求协议是hello 这里的hello来自js的调用，在js中设为 document.location = "hello://你好";
+          //scheme：hello ，msg：你好
+          //通过url拦截的方式，作为对ios原生方法的呼叫
+          if request.URL?.scheme == "hello"{
+              let method:String = request.URL?.scheme as String!
+              let sel =  Selector(method+":")
+              self.performSelector(sel, withObject:request.URL?.host)
+              request.URL?.path
+              //如果return true ，页面加载request，我们只是当做协议使用所以不能页面跳转
+              return false
+          }
+          return true
+}
+
+
+函数回调/返回值
+Native调JS可以有返回值，但是JS调Native是通过间接的拦截request方式实现，它根本就不算方法调用，
+所以应该是不存在可以直接产生返回值的。当然如果需要Native对JS的调用有所响应，可以通过回调函数
+的方式回应JS。可以在调用Native的时候增加一个JS回叫函数名 app在处理完之后调用回调函数
+并把需要的参数通过回调函数的方式进行传递。
+
+
+
+WKWebView
+Web脚本注入
+WKUserScript 允许在正文加载之前或之后注入到页面中。这个强大的功能允许在页面中以安全且唯一的方式操作网页内容。
+WKUserScript 对象可以以 JavaScript 源码形式初始化，初始化时还可以传入是在加载之前还是结束时注入，
+以及脚本影响的是这个布局还是仅主要布局。于是用户脚本被加入到 WKUserContentController 中，并且以 
+WKWebViewConfiguration 属性传入到 WKWebView 的初始化过程中。
+
+
+  let source = "document.body.style.background = \"#777\";"
+  let userScript = WKUserScript(source: source, injectionTime: .AtDocumentEnd, forMainFrameOnly: true)
+
+  let userContentController = WKUserContentController()
+  userContentController.addUserScript(userScript)
+  let configuration = WKWebViewConfiguration()
+  configuration.userContentController = userContentController
+  self.webView = WKWebView(frame: self.view.bounds, configuration: configuration)
+
+
+Native 调 JS 方法
+
+//直接调用JS
+   webView.evaluateJavaScript("hi()", completionHandler: nil)
+      //调用JS带参数
+      webView.evaluateJavaScript("hello('liuyanwei')", completionHandler: nil)
+      //调用JS获取返回值
+      webView.evaluateJavaScript("getName()") { (any,error) -> Void in
+          NSLog("%@", any as! String)
+      }
+
+
+WK通过与UIWebView类似的方法调用JS语句,但获取返回值的方式不同，WKWebView用的是回调函数获取返回值。
+
+JS调Native方法
+Web中的信息也可以通过调用这个函数被传给Native里：
+
+var message = {
+                          'method' : 'hello',
+                          'param1' : 'haibao',
+                          };
+ window.webkit.messageHandlers.webViewApp.postMessage(message);
+ //这个 API 真正神奇的地方在于 JavaScript 对象可以自动转换为 Objective-C 或 Swift 对象。
+ //Native中Handler的注册handler需要在WKWebView初始化之前
+ config = WKWebViewConfiguration()
+           //注册js方法
+          config.userContentController.addScriptMessageHandler(self, name: "webViewApp")
+          webView = WKWebView(frame: self.webWrap.frame, configuration: config)
+ //处理handler委托。ViewController实现WKScriptMessageHandler委托的func userContentController(userContentController: WKUserContentController, didReceiveScriptMessage message: WKScriptMessage)方法
+ //实现WKScriptMessageHandler委托
+       class ViewController：WKScriptMessageHandler
+       //实现js调用ios的handle委托
+       func userContentController(userContentController: WKUserContentController, didReceiveScriptMessage message: WKScriptMessage) {
+           //接受传过来的消息从而决定app调用的方法
+           let dict = message.body as! Dictionary<String,String>
+           let method:String = dict["method"]!
+           let param1:String = dict["param1"]!
+           if method=="hello"{
+               hello(param1)
+           }
+       }
+
+
+Alert拦截
+在WKWebview中，JS的Alert是不会出现任何内容的，你必须重写WKUIDelegate委托的
+runJavaScriptAlertPanelWithMessage message方法，自己处理Alert。
+
+类似的还有Confirm和Prompt也和Alert类似。
+
+Alert拦截方法
+ func webView(webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: () -> Void) {
+          completionHandler()
+          let alert = UIAlertController(title: "ios-alert", message: "\(message)", preferredStyle: .Alert)
+          alert.addAction(UIAlertAction(title: "ok", style: .Default, handler:nil))
+          alert.addAction(UIAlertAction(title: "cancel", style: .Cancel, handler: nil))
+          self.presentViewController(alert, animated: true, completion: nil)
+}
+
+
+Native/Web端做好交互格式约定，Native端提供规范性的API供Web端访问。
+常用API：
+
+界面跳转（N->W/W->N/W->W/W->W新开WebView）+过场动画
+Header组件
+NativeUI相关组件(Loading遮罩等)
+分享
+推送
+登录
+
+
+
+框架架构
+
+架构选择MVC，因为上层逻辑都是Web端实现的，对于Controller的负担不是太重。
+框架结构为TabBar+Navi。
+Web部分将入口界面的样式资源存放本地，后续跳转及动态数据通过网络获取。
+
+
+
+数据请求
+
+本地数据访问
+
+
+前端要做的事就是 封装 Native 提供的各种能力。
+
+
+Hybird 中的Native 和 前端 各自的工作 是 什么。
+Hybrid 的交互接口如何设计
+Hybrid 的header 如何设计
+Hybrid 的如何设计目录结构以及增量机制如何实现
+资源缓存策略，白屏问题......
+
+前端要做的事情就是封装Native提供的各种能力。
+
+
+app 自身可以自定义 url schama 并且把 自定义 的 url 注册 到调度中心。
+
+我们JS与Native通信一般就是创建这类URL被Native捕获处理，
+后续也出现了其它前端调用Native的方式，但可以做底层封装使其透明化，所以重点以及是如何进行前端与Native的交互设计。
+
+
+JS to Native 
+
+Native 在每个版本 提供一些 API ，前端会有一个对应的框架团队对其进行封装，释放业务接口
+
+API 交互
+
+调用Native API接口的方式和我们使用AJAX调用服务器端提供的接口是及其相似的。
+
+所以我在实际设计Hybrid交互模型时，是以接口为单位进行设计的。
+
+格式约定
+设计数据格式（请求数据格式，响应数据格式）
+
+
+参考ajax的请求模型大概是：
+
+$.ajax(options) ⇒ XMLHttpRequest
+type (默认值："GET") HTTP的请求方法(“GET”, “POST”, or other)。
+url (默认值：当前url) 请求的url地址。
+data (默认值：none) 请求中包含的数据，对于GET请求来说，这是包含查询字符串的url地址，如果是包含的是object的话，$.param会将其转化成string。
+
+
+这里提一点，APP安装后会在手机上注册一个schema，比如淘宝是taobao://，Native会有一个进程监控Webview发出的所有schema://请求，然后分发到“控制器”hybridapi处理程序，Native控制器处理时会需要param提供的参数（encode过），处理结束后将携带数据获取Webview window对象中的callback（hybrid_1446276509894）调用之
+
+
+常用交互 API
+
+跳转
+
+页面内跳转 与 Hybird 无关
+H5 跳转 Native 界面
+H5 新开 WebView 跳转 H5 页面，一般为做页面动画切换。
+
+
+如果要使用动画，按业务来说有向前与向后两种，forward&back。
+
+
+Header 组件的设计
+
+PS：Native吊起Native时，如果300ms没有响应需要出loading组件，避免白屏
+
+因为H5站点本来就有Header组件，站在前端框架层来说，需要确保业务的代码是一致的，所有的差异需要在框架层做到透明化，简单来说Header的设计需要遵循：
+
+① H5 header组件与Native提供的header组件使用调用层接口一致
+
+② 前端框架层根据环境判断选择应该使用H5的header组件抑或Native的header组件
+
+一般来说header组件需要完成以下功能：
+
+① header左侧与右侧可配置，显示为文字或者图标（这里要求header实现主流图标，并且也可由业务控制图标），并需要控制其点击回调
+
+② header的title可设置为单标题或者主标题、子标题类型，并且可配置lefticon与righticon（icon居中）
+
+③ 满足一些特殊配置，比如标签类header
+
+
+请求类 
+处理 跨域 问题。
+
+Native 做一层代理发出去。
+
+
+常用 NativeUI 组件。
+loading 加载层， toast 消息框
+
+
+
+账号系统的设计
+
+根据上面的设计，我们约定在Hybrid中请求有两种发出方式：
+
+① 如果是webview访问线上站点的话，直接使用传统ajax发出
+② 如果是file的形式读取Native本地资源的话，请求由Native代理发出
+
+
+
+
+
+
+Hybrid 的资源
+
+Hybrid技术既然是将静态资源存于Native，那么就需要目录设计。
+
+最初设计的forward跳转中的topage参数规则是：频道/具体页面=>channel/page，
+其余资源会由index.html这个入口文件带出。
+
+-------------------------
+
+H5 与 Schema 通信
+
+事实上Native能捕捉webview发出的一切请求，所以就算这里不是这种协议，
+Native也能捕捉，这个协议的意义在于可以在浏览器中直接打开APP。
+
+我们在H5获取Native方法时一般是会构造一个这样的请求，使用iframe发出。
+多数情况下这种方式没有问题，但是我们在后续的开发中，
+为了统一鉴权，将所有的请求全部代理到了Native发出。
+
+
+这里可是POST请求，这里首先考虑的是长度限制，
+毕竟这个是由iframe的src设置的，虽然各个浏览器不一样，但必定会收到长度限制（2k）
+
+JavaScriptCore： 
+
+这里Native需要注意方法注入的时机，一般是一旦载入页面便需要载入变量，这里的交互模型是：
+
+URL Schema与JavaScriptCore的优劣不好说，还是看具体使用场景吧。
+
+选择建议：
+
+
+
+Hybrid 版本
+
+交互格式约定：
+
+这里依旧采用类似Ajax的交互规则：
+
+调用方式
+Native是有能力为前端注入所有需要的方法了。
+
+意思是之前要根据url schema然后native捕捉请求后，获取tagname字符串，
+再映射到具体NativeAPI，而现在Native已经有能力将这些Native API建立一个映射函数，
+注入给H5，所以H5可以直接调用这些方法了。
+
+
+一个比较好的交互事实上是这样的，请求的时候要通过一个地方的处理，
+回调的时候也需要通过一个地方的处理，而这个地方便是我们能统一把关与控制的地方了，
+正如我们对ajax的收口，对settimeout的收口是一个道理。
+
+跳转
+
+入口类跳转
+
+history 错乱
+
+header 组件
+H5开发中对Header部分的操作是不可避免的，于是我们抽象出了UIHeader组件处理这种操作，
+事实上在Hybrid中的Header也应该是一个通用组件，前端做的仅仅是根据约定的格式去调用
+这个组件即可，但是因为要保证H5与Native调用的一致性，所以要规范化业务代码的使用。
+
+
+防止假死。
+
+
+
+数据请求
+
+NativeUI
+一般来说在webview加载html时会有一段时间白屏时间，这个时候便需要Native的loading出场，在页面加载完成后需要在前端框架层将Native loading关闭。
+
+
+Native 通信问题。
+
+静态资源读取 和 更新。
+
+
+
+
+
+
+
+
+
